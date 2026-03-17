@@ -7,6 +7,8 @@ import yaml
 from ppa_publish.config import load_config, ConfigError
 from ppa_publish.generators.debian import generate_debian_directory
 from ppa_publish.validators import validate_project
+from ppa_publish.builder import release_to_ppa, BuildError
+from ppa_publish.validators import ValidationError
 from ppa_publish.config import (
     PPAConfig, PackageInfo, Maintainer, PPAInfo,
     Dependencies, InstallMapping
@@ -174,6 +176,58 @@ def validate():
         raise SystemExit(1)
     else:
         click.echo("Validation passed with warnings.")
+
+
+@cli.command()
+@click.argument('version')
+@click.option('--message', '-m', help='Release message')
+@click.option('--force', '-f', is_flag=True, help='Force re-upload')
+@click.option('--only', help='Only build for specific releases (comma-separated)')
+def release(version, message, force, only):
+    """
+    Build and upload to PPA for all configured releases.
+
+    VERSION: Version number (e.g., 1.0.0)
+
+    Examples:
+      ppa-publish release 1.0.0
+      ppa-publish release 1.0.1 -m "Bug fix release"
+      ppa-publish release 1.0.0 --only noble,jammy
+    """
+    config_path = Path.cwd() / ".ppa-publish.yml"
+
+    if not config_path.exists():
+        click.echo("Error: .ppa-publish.yml not found")
+        raise SystemExit(1)
+
+    try:
+        config = load_config(config_path)
+    except ConfigError as e:
+        click.echo(f"Config error: {e}")
+        raise SystemExit(1)
+
+    only_releases = None
+    if only:
+        only_releases = [r.strip() for r in only.split(',')]
+
+    try:
+        release_to_ppa(
+            config=config,
+            version=version,
+            message=message,
+            force=force,
+            only_releases=only_releases
+        )
+    except ValidationError as e:
+        click.echo(f"Validation failed: {e}")
+        click.echo("\nRun 'ppa-publish validate' to see details")
+        raise SystemExit(1)
+    except BuildError as e:
+        click.echo(f"Build failed: {e}")
+        raise SystemExit(1)
+    except Exception as e:
+        click.echo(f"Unexpected error: {e}")
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':
