@@ -6,6 +6,7 @@ import yaml
 
 from ppa_publish.config import load_config, ConfigError
 from ppa_publish.generators.debian import generate_debian_directory
+from ppa_publish.validators import validate_project
 from ppa_publish.config import (
     PPAConfig, PackageInfo, Maintainer, PPAInfo,
     Dependencies, InstallMapping
@@ -130,6 +131,49 @@ def init():
     click.echo("  2. Run: ppa-publish setup-gpg")
     click.echo("  3. Run: ppa-publish validate")
     click.echo("  4. Run: ppa-publish release 1.0.0")
+
+
+@cli.command()
+def validate():
+    """
+    Validate project before building.
+
+    Runs all validators and reports errors/warnings.
+    """
+    config_path = Path.cwd() / ".ppa-publish.yml"
+
+    if not config_path.exists():
+        click.echo("Error: .ppa-publish.yml not found")
+        click.echo("\nRun 'ppa-publish init' first")
+        raise SystemExit(1)
+
+    try:
+        config = load_config(config_path)
+    except ConfigError as e:
+        click.echo(f"Config error: {e}")
+        raise SystemExit(1)
+
+    click.echo("Validating project...\n")
+
+    result = validate_project(Path.cwd(), config)
+
+    if result.has_errors():
+        click.echo(f"{len(result.errors)} error(s) found:\n")
+        for error in result.errors:
+            click.echo(f"  * {error}\n")
+
+    if result.has_warnings():
+        click.echo(f"{len(result.warnings)} warning(s):\n")
+        for warning in result.warnings:
+            click.echo(f"  * {warning}\n")
+
+    if not result.has_errors() and not result.has_warnings():
+        click.echo("All validations passed!")
+    elif result.has_errors():
+        click.echo("Cannot proceed with build until errors are fixed.")
+        raise SystemExit(1)
+    else:
+        click.echo("Validation passed with warnings.")
 
 
 if __name__ == '__main__':
