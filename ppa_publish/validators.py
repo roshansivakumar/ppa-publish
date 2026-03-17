@@ -6,6 +6,8 @@ from typing import List
 import os
 import re
 
+from ppa_publish.config import PPAConfig
+
 
 @dataclass
 class ValidationResult:
@@ -109,3 +111,75 @@ def check_debian_section(section: str) -> ValidationResult:
             f"Valid sections: {', '.join(sorted(VALID_SECTIONS)[:10])}..."
         )
     return result
+
+
+def check_install_files_exist(project_root, install_files):
+    """Check all install source files exist."""
+    result = ValidationResult()
+    for mapping in install_files:
+        source_path = project_root / mapping.source
+        if not source_path.exists():
+            result.add_error(
+                f"Install source file not found: {mapping.source}\n"
+                f"Fix: Create the file or remove from install list"
+            )
+    return result
+
+
+def check_gpg_key_exists(email):
+    """Check if GPG key exists for maintainer email."""
+    result = ValidationResult()
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ['gpg', '--list-secret-keys', email],
+            capture_output=True, text=True
+        )
+        if proc.returncode != 0:
+            result.add_warning(
+                f"No GPG key found for {email}\n"
+                f"Fix: Run 'ppa-publish setup-gpg'"
+            )
+    except FileNotFoundError:
+        result.add_warning("GPG not installed")
+    return result
+
+
+def validate_project(project_root, config: PPAConfig):
+    """Run all validators on the project."""
+    combined = ValidationResult()
+
+    email_result = check_email_format(config.maintainer.email)
+    combined.errors.extend(email_result.errors)
+    combined.warnings.extend(email_result.warnings)
+
+    section_result = check_debian_section(config.package.section)
+    combined.errors.extend(section_result.errors)
+    combined.warnings.extend(section_result.warnings)
+
+    install_result = check_install_files_exist(project_root, config.install_files)
+    combined.errors.extend(install_result.errors)
+    combined.warnings.extend(install_result.warnings)
+
+    for mapping in config.install_files:
+        source_path = project_root / mapping.source
+        if source_path.exists():
+            line_result = check_line_endings(source_path)
+            combined.errors.extend(line_result.errors)
+
+            if source_path.suffix == '.sh':
+                exec_result = check_executable(source_path)
+                combined.errors.extend(exec_result.errors)
+
+    rules_path = project_root / "debian" / "rules"
+    if rules_path.exists():
+        rules_result = check_debian_rules_tabs(rules_path)
+        combined.errors.extend(rules_result.errors)
+
+        exec_result = check_executable(rules_path)
+        combined.errors.extend(exec_result.errors)
+
+    gpg_result = check_gpg_key_exists(config.maintainer.email)
+    combined.warnings.extend(gpg_result.warnings)
+
+    return combined

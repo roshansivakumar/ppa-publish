@@ -100,3 +100,52 @@ def test_check_debian_section_invalid():
     result = check_debian_section("testing")
     assert result.has_errors()
     assert "Invalid section" in result.errors[0]
+
+
+from ppa_publish.validators import (
+    check_install_files_exist,
+    check_gpg_key_exists,
+    validate_project,
+)
+from ppa_publish.config import PPAConfig, PackageInfo, Maintainer, PPAInfo, Dependencies, InstallMapping
+
+
+def test_check_install_files_exist_all_present(tmp_path):
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "test.sh").write_text("#!/bin/bash\n")
+    install_files = [InstallMapping(source="bin/test.sh", dest="usr/bin/")]
+    result = check_install_files_exist(tmp_path, install_files)
+    assert not result.has_errors()
+
+
+def test_check_install_files_exist_missing(tmp_path):
+    install_files = [InstallMapping(source="bin/missing.sh", dest="usr/bin/")]
+    result = check_install_files_exist(tmp_path, install_files)
+    assert result.has_errors()
+    assert "not found" in result.errors[0]
+
+
+def test_validate_project_comprehensive(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    (tmp_path / "bin").mkdir()
+    script = tmp_path / "bin" / "test.sh"
+    script.write_text("#!/bin/bash\necho 'test'\n")
+    script.chmod(0o755)
+
+    (tmp_path / "debian").mkdir()
+    rules = tmp_path / "debian" / "rules"
+    rules.write_text("#!/usr/bin/make -f\n\n%:\n\tdh $@\n")
+    rules.chmod(0o755)
+
+    config = PPAConfig(
+        package=PackageInfo(name="test", description="Test", section="utils"),
+        maintainer=Maintainer(name="Test", email="test@example.com"),
+        ppa=PPAInfo(username="test", ppa_name="test"),
+        releases=["noble"],
+        dependencies=Dependencies(build=["debhelper (>= 10)"], runtime=[]),
+        install_files=[InstallMapping(source="bin/test.sh", dest="usr/bin/")],
+    )
+
+    result = validate_project(tmp_path, config)
+    assert not result.has_errors()
