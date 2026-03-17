@@ -1,0 +1,16 @@
+Source: {{ package_name }}
+Section: {{ section }}
+Priority: optional
+Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
+Build-Depends: {{ build_deps|join(', ') }}
+Standards-Version: 4.6.0
+{% if homepage %}Homepage: {{ homepage }}{% endif %}
+
+Package: {{ package_name }}
+Architecture: all
+Depends: ${misc:Depends}{% if runtime_deps %}, {{ runtime_deps|join(', ') }}{% endif %}
+
+Description: {{ short_description }}
+{% for line in long_description_lines %}
+ {{ line }}
+{% endfor %}
