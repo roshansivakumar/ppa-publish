@@ -1,0 +1,1 @@
+recursive-include ppa_publish/templates *.j2
